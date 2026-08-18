@@ -8800,10 +8800,12 @@ function generatePlayerStatsNew(attrs, gameResult, isPlayoff) {
     return _pc && _pc[a] != null ? Math.min(_pc[a], attrs[a] == null ? 50 : attrs[a]) : (attrs[a] == null ? 50 : attrs[a]);
   }
   // ★ 模块三：篮板 = 篮板70% + 力量30%（卡位），波动 ±25%，叠巅峰系数
-  const rebScale = posScale.reb || 0.35;
-  const rebFactor = af(_posCap('REB')) * 0.7 + af(_posCap('STR')) * 0.3;
-  const rebVal = rebFactor * (totalScore / 200) * rebScale * (SIM_CONFIG.PLAYER_STATS.REB_BASE || 13.5) * statMinsFactor * energyFactor * peakFactor * seasonForm * _gameBoost * (0.75 + Math.random() * 0.5);
-  let reb = Math.round(Math.max(0, rebVal));
+const rebScale = posScale.reb || 0.35;
+const rebFactor = af(_posCap('REB')) * 0.7 + af(_posCap('STR')) * 0.3;
+const rebVal = rebFactor * (totalScore / 200) * rebScale * (SIM_CONFIG.PLAYER_STATS.REB_BASE || 13.5) * statMinsFactor * energyFactor * peakFactor * seasonForm * _gameBoost * (0.75 + Math.random() * 0.5);
+let reb = Math.round(Math.max(0, rebVal));
+// ★★★ 在这里插入你的篮板系数 ★★★
+reb = Math.round(reb * 2.0);   // 只加倍篮板
   
   // ★ 模块三：助攻 = 传球75% + 手感/关键25%，波动 ±25%，叠巅峰系数
   var astScale = posScale.ast || 0.4;
