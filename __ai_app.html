@@ -6767,61 +6767,30 @@ var AW_M = (SIM_CONFIG.AWARD_RULES && SIM_CONFIG.AWARD_RULES.MVP) || {
   var mvpPick = null;
   var mvpUserRankIdx = -1;
   for (var _mri = 0; _mri < mvpPool.length; _mri++) { if (mvpPool[_mri].isUser) mvpUserRankIdx = _mri; }
-  var userMvpProb = 0;
-  if (userMvpCand && mvpPool.length > 1) {
-    var mvpStreakMul = AW_M.streakMul[Math.min(userMvpStreak, AW_M.streakMul.length - 1)];
-    if (mvpUserRankIdx === 0) {
-      var lead = (userMvpCand.score - mvpPool[1].score) / (mvpPool[1].score || 1);
-      // ★ 数据统治保底：场均 ≥31 分（收敛后得分王级统治）→ 0.85，修复“场均 33 分拿不到 MVP”
-      var _scoringLead = (avg.pts || 0) >= 30;
-      userMvpProb = (_scoringLead ? 0.85 : (lead >= 0.10 ? AW_M.dominanceWin : AW_M.closeWin)) * mvpStreakMul;
-    } else if (mvpUserRankIdx === 1) {
-      userMvpProb = AW_M.secondWin * mvpStreakMul;
-    } else if (mvpUserRankIdx === 2) {
-      userMvpProb = AW_M.thirdWin;
-    } else if (mvpUserRankIdx === 3) {
-      userMvpProb = AW_M.fourthWin || 0.08; // ★ 90-95 档爆冷窗口
-    } else if (mvpUserRankIdx === 4) {
-      userMvpProb = AW_M.fifthWin || 0.05;
-    } else if (mvpUserRankIdx === 5) {
-      userMvpProb = AW_M.sixthWin || 0.03;
-    }
-    // ★ M1（接入 2026-08-17）：峰值期 OVR≥98 且场均≥20 分 → MVP 权重 ×1.35（让 96 开局成长到 99 后稳定争 MVP，期望 ≈8）
-    try {
-      var _peakO = parseInt(STATE.finalOVR) || 0;
-      var _peakA = (avg && avg.pts) || 0;
-      if (_peakO >= 98 && _peakA >= 20 && (AW_M.peakMul != null ? AW_M.peakMul : 1) > 1) {
-        userMvpProb = Math.min(0.97, userMvpProb * AW_M.peakMul);
-      }
-      // ★ 2026-08-17：荣誉争议复仇——上季放话复仇，本季 MVP 竞争 +10%
-      if (STATE.career && STATE.career.flags && STATE.career.flags.awardRevenge === 'mvp') {
-        delete STATE.career.flags.awardRevenge;
-        userMvpProb = Math.min(0.97, userMvpProb * 1.1);
-      }
-    } catch(e) {}
-  }
-  // ★ 新秀赛季可冲击 MVP（玩家比历史顶级更强），但概率×rookieMul（默认 0.25，与 DPOY 一致）
-  var mvpRookieF = (STATE.career && STATE.career.seasonCount === 0) ? ((AW_M.rookieMul != null ? AW_M.rookieMul : 0.25)) : 1;
-  if (userMvpCand && Math.random() < userMvpProb * mvpRookieF) {
+  
+  // ★★★ 强制玩家获得 MVP（只要玩家有候选资格）★★★
+  if (userMvpCand) {
     mvpPick = userMvpCand;
   } else {
+    // 兜底：极端情况下玩家无候选，从 NPC 中选第一个
     var mvpNpcPool = mvpPool.filter(function(c) { return !c.isUser; });
-    if (mvpNpcPool.length === 0) {
-      mvpPick = mvpAll.length ? mvpAll[0] : { cname: '当季空缺', playerName: '', team: '', isUser: false, rank: 30 };
-    } else {
-      var mvpW = mvpNpcPool.reduce(function(s, c) { return s + Math.max(0.1, c.score); }, 0);
-      var mvpRoll = Math.random() * mvpW;
-      for (var _ni = 0; _ni < mvpNpcPool.length; _ni++) {
-        mvpRoll -= Math.max(0.1, mvpNpcPool[_ni].score);
-        if (mvpRoll <= 0) { mvpPick = mvpNpcPool[_ni]; break; }
-      }
-      if (!mvpPick) mvpPick = mvpNpcPool[mvpNpcPool.length - 1];
+    mvpPick = mvpNpcPool.length ? mvpNpcPool[0] : { cname: '当季空缺', playerName: '', team: '', isUser: false };
+  }
+  var mvpUserRank = '🥇 第一名';
+  
+  // MVP 保底全明星首发
+  try {
+    var _asAward = (STATE.season.awards || []).find(function(a) { return a && a.act === 'allStar'; });
+    if (_asAward) {
+      var _asNames = String(_asAward.winner || '').split('\u3001').filter(Boolean);
+      var _myName = getHupuDisplayName();
+      if (_asNames.indexOf(_myName) < 0) _asNames.unshift(_myName);
+      _asAward.winner = _asNames.slice(0, 5).join('\u3001');
+      _asAward.isUser = true;
+      _asAward.userRank = '⭐ 入选首发（MVP保底）';
     }
-  }
-  var mvpUserRank = mvpPick && mvpPick.isUser ? '🥇 第一名' : (userMvpCand ? '进入评选' : '未入围');
-  if (!mvpPick.isUser && mvpUserRank !== '未入围' && getUserRankStreak('mvp', mvpUserRank) >= 2) {
-    mvpUserRank = '未入围'; // 连续两届同奖项同名次，下一届波动
-  }
+  } catch(e) {}
+  
   STATE.season.awards.push({
     act:'mvp',
     label:'MVP',
@@ -6832,21 +6801,6 @@ var AW_M = (SIM_CONFIG.AWARD_RULES && SIM_CONFIG.AWARD_RULES.MVP) || {
     userRank:mvpUserRank,
     _userRankIdx: mvpUserRankIdx
   });
-  // Cross-award invariant: the MVP is always an All-Star starter, even though the All-Star block is calculated earlier.
-  try {
-    var _asAward = (STATE.season.awards || []).find(function(a) { return a && a.act === 'allStar'; });
-    var _mvpName = mvpPick && (mvpPick.cname || mvpPick.name || (mvpPick.isUser ? getHupuDisplayName() : ''));
-    if (_asAward && _mvpName) {
-      var _asNames = String(_asAward.winner || '').split('\u3001').filter(Boolean);
-      if (_asNames.indexOf(_mvpName) < 0) _asNames.unshift(_mvpName);
-      _asAward.winner = _asNames.slice(0, 5).join('\u3001');
-      if (mvpPick.isUser) {
-        _asAward.isUser = true;
-        _asAward.userRank = '\u2B50 \u5165\u9009\u9996\u53D1\uFF08MVP\u4FDD\u5E95\uFF09';
-      }
-      _asAward.mvpStarterForced = true;
-    }
-  } catch(e) {}
 
 
   // ==================== DPOY（竞争制：防守数据 × 球队防守 × 年龄 × 连庄递减） ====================
@@ -6918,7 +6872,10 @@ var AW_M = (SIM_CONFIG.AWARD_RULES && SIM_CONFIG.AWARD_RULES.MVP) || {
       dpoyWinProb = Math.min(0.97, dpoyWinProb + 0.08);
     }
   } catch(e) {}
-  var dpoyWin = dpoyEligible && dpoyWinProb > 0 && Math.random() < dpoyWinProb;
+  
+  // ★★★ 强制玩家获得 DPOY（只要出场≥65场且有防守属性）★★★
+  var dpoyWin = dpoyEligible && (parseInt(STATE.attrs && STATE.attrs.PDEF) || 60) > 0;
+  
   var dpoyUserRank = dpoyEligible ? '未进入前五' : '出勤不足（' + (ps.games || 0) + '场）';
   if (dpoyEligible) {
     if (dpoyWin) {
@@ -7290,24 +7247,29 @@ var AW_M = (SIM_CONFIG.AWARD_RULES && SIM_CONFIG.AWARD_RULES.MVP) || {
     var myName3 = getHupuDisplayName();
     var myVals = { pts: avg.pts, reb: avg.reb, ast: avg.ast };
     function pushTitle(act, label, emoji, k) {
-      // ★ 数据王改为“确定性排名制”（现实规则）：场均最高者直接获奖，不再用爆冷概率，
-      //   杜绝“场均 30 分落选、25 分却当选”的矛盾；排名按真实数值排序（并列同分同名次）。
       var myVal = myVals[k];
       var npcBest = npcTop[k] || { v: -1, name: '—', en: '', team: '' };
-      var higher = 0;
-      for (var _ri = 0; _ri < npcVals[k].length; _ri++) {
-        if (npcVals[k][_ri] > myVal) higher++;
-      }
-      var rank3 = higher + 1;
+      // ★★★ 强制玩家获得数据王（只要出勤达标且场均>0）★★★
+      var userWins = eligible3 && myVal > 0;
+      var rank3 = userWins ? 1 : (function() {
+        var higher = 0;
+        for (var _ri = 0; _ri < npcVals[k].length; _ri++) {
+          if (npcVals[k][_ri] > myVal) higher++;
+        }
+        return higher + 1;
+      })();
       var rankTxt;
       if (!eligible3) {
-        // 出勤不足（<58 场）不参与数据王：排名显示出勤情况，获奖者恒为 NPC 领头羊
         rankTxt = '出勤不足（' + gp3 + '场）';
-      } else if (rank3 === 1) { rankTxt = '🥇 第一名'; }
-      else if (rank3 === 2) { rankTxt = '🥈 第二名'; }
-      else if (rank3 === 3) { rankTxt = '🥉 第三名'; }
-      else { rankTxt = '第' + rank3 + '名'; }
-      var userWins = eligible3 && myVal > 0 && myVal >= npcBest.v;
+      } else if (userWins) {
+        rankTxt = '🥇 第一名';
+      } else if (rank3 === 2) {
+        rankTxt = '🥈 第二名';
+      } else if (rank3 === 3) {
+        rankTxt = '🥉 第三名';
+      } else {
+        rankTxt = '第' + rank3 + '名';
+      }
       STATE.season.awards.push({
         act: act, label: label, emoji: emoji,
         winner: userWins ? myName3 : npcBest.name,
@@ -7324,7 +7286,6 @@ var AW_M = (SIM_CONFIG.AWARD_RULES && SIM_CONFIG.AWARD_RULES.MVP) || {
 
   updateAwardStreaks();
   } catch(e) { STATE.season.awards = STATE.season.awards || []; }
-}
 
 /** 奖项页：每个奖项一行，头像 + 获奖者 + 排名 */
 /** ★ 2026-08-17：荣誉争议事件——玩家强候选但落选时弹窗解释（一季一次，奖项结果不变） */
