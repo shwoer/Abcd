@@ -8422,20 +8422,9 @@ function getPeakFactor(age) {
   return pk.lateFactor;
 }
 
-/** ★ 玩家专属年龄曲线：26-34 超长巅峰、35-37 平缓过渡、38-40 暮年严重下滑（NPC 仍走 getPeakFactor） */
 function getPlayerPeakFactor(age) {
-  age = parseInt(age, 10) || 27;
-  var pk = SIM_CONFIG.PLAYER_STATS && (SIM_CONFIG.PLAYER_STATS.PLAYER_PEAK || SIM_CONFIG.PLAYER_STATS.PEAK);
-  if (!pk) return 1;
-  if (age < pk.primeStart) {
-    var _ybp = SIM_CONFIG.PLAYER_STATS && SIM_CONFIG.PLAYER_STATS.YOUNG_BY_POS;
-    return (_ybp && _ybp[STATE.position] != null) ? _ybp[STATE.position] : pk.young;
-  }
-  if (age <= pk.primeEnd) return pk.primeFactor;
-  if (age <= pk.midEnd) return pk.midFactor;
-  // ★ 37+ 老将逐龄递减（PLAYER_PEAK.lateByAge）
-  if (pk.lateByAge && pk.lateByAge[age] != null) return pk.lateByAge[age];
-  return pk.lateFactor;
+  // ★ 玩家专属年龄曲线：永远保持巅峰，不受年龄影响
+  return 1.5;   // 你想调多高就改这个数字，1.5 表示数据 ×1.5
 }
 
 /** ★ 每季状态分布：低迷年/平常年/爆发年（五项数据共用，得分不再额外叠加使用率随机） */
@@ -8793,52 +8782,53 @@ function generatePlayerStatsNew(attrs, gameResult, isPlayoff) {
   for (var _fi2 = 0; _fi2 < fta; _fi2++) { if (Math.random() < ftPct) ftm++; }
   
   let pts = threeM * 3 + midM * 2 + finM * 2 + ftm;
-  
-  // ★ 位置专业化：非主项属性效率帽（全 99 也受位置限制）
-  function _posCap(a) {
-    var _pc = SIM_CONFIG.PLAYER_STATS.POS_CAP && SIM_CONFIG.PLAYER_STATS.POS_CAP[pos];
-    return _pc && _pc[a] != null ? Math.min(_pc[a], attrs[a] == null ? 50 : attrs[a]) : (attrs[a] == null ? 50 : attrs[a]);
-  }
-  // ★ 模块三：篮板 = 篮板70% + 力量30%（卡位），波动 ±25%，叠巅峰系数
+// ★ 位置专业化：非主项属性效率帽（全 99 也受位置限制）
+function _posCap(a) {
+  var _pc = SIM_CONFIG.PLAYER_STATS.POS_CAP && SIM_CONFIG.PLAYER_STATS.POS_CAP[pos];
+  return _pc && _pc[a] != null ? Math.min(_pc[a], attrs[a] == null ? 50 : attrs[a]) : (attrs[a] == null ? 50 : attrs[a]);
+}
+// ★ 模块三：篮板 = 篮板70% + 力量30%（卡位），波动 ±25%，叠巅峰系数
 const rebScale = posScale.reb || 0.35;
 const rebFactor = af(_posCap('REB')) * 0.7 + af(_posCap('STR')) * 0.3;
 const rebVal = rebFactor * (totalScore / 200) * rebScale * (SIM_CONFIG.PLAYER_STATS.REB_BASE || 13.5) * statMinsFactor * energyFactor * peakFactor * seasonForm * _gameBoost * (0.75 + Math.random() * 0.5);
 let reb = Math.round(Math.max(0, rebVal));
-// ★★★ 在这里插入你的篮板系数 ★★★
-reb = Math.round(reb * 2.0);   // 只加倍篮板
-  
-  // ★ 模块三：助攻 = 传球75% + 手感/关键25%，波动 ±25%，叠巅峰系数
-  var astScale = posScale.ast || 0.4;
-  // ★ 组织核心：C/PF 且 PAS≥92 → 助攻基准渐进提升（约基奇式；封顶 0.64，避免全99助攻虚高）
-  if ((pos === 'C' || pos === 'PF') && (parseInt(attrs.PAS) || 0) >= 92) {
-    astScale = Math.min(0.72, astScale + ((parseInt(attrs.PAS) || 0) - 92) * 0.04);
-  }
-  const astFactor = af(_posCap('PAS')) * 0.75 + af(((_posCap('HAN') + _posCap('CLU')) / 2)) * 0.25;
-  const astVal = astFactor * (totalScore / 200) * astScale * (SIM_CONFIG.PLAYER_STATS.AST_BASE || 12) * statMinsFactor * energyFactor * peakFactor * seasonForm * _gameBoost * (0.75 + Math.random() * 0.5);
-  let ast = Math.round(Math.max(0, astVal));
-  
-  // ★ 抢断 = PDEF主导 + ATH/HAN辅助（按位置权重）
-  const stlF = SIM_CONFIG.PLAYER_STATS.FACTORS[pos].stl;
-  const stlSum = stlF.PDEF + (stlF.ATH || 0) + (stlF.HAN || 0);
-  const stlAvg = (af(_posCap('PDEF')) * stlF.PDEF + af(_posCap('ATH')) * (stlF.ATH || 0) + af(_posCap('HAN')) * (stlF.HAN || 0)) / stlSum;
-  const _stlCoeff = (SIM_CONFIG.PLAYER_STATS.STL_COEFF && SIM_CONFIG.PLAYER_STATS.STL_COEFF[pos]) || 2.9;
-  // ★ 抢断/盖帽不随赛季状态（低迷期）缩放：防守数据稳定，保证 DPOY 评选公平
-  const stlVal = stlAvg * (totalScore / 200) * _stlCoeff * statMinsFactor * energyFactor * peakFactor * _gameBoost * (0.75 + Math.random() * 0.5);
-  let stl = Math.round(Math.max(0, stlVal));
-  
-  // ★ 盖帽 = BLK主导 + IDEF辅助 + ATH微调（按位置权重）
-  const blkF = SIM_CONFIG.PLAYER_STATS.FACTORS[pos].blk;
-  const blkSum = blkF.BLK + (blkF.IDEF || 0) + (blkF.ATH || 0);
-  const blkAvg = (af(_posCap('BLK')) * blkF.BLK + af(_posCap('IDEF')) * (blkF.IDEF || 0) + af(_posCap('ATH')) * (blkF.ATH || 0)) / blkSum;
-  const _blkCoeff = (SIM_CONFIG.PLAYER_STATS.BLK_COEFF && SIM_CONFIG.PLAYER_STATS.BLK_COEFF[pos]) || (pos === 'C' ? 3.0 : pos === 'PF' ? 2.8 : 2.2);
-  const blkVal = blkAvg * (totalScore / 200) * _blkCoeff * statMinsFactor * energyFactor * peakFactor * _gameBoost * (0.75 + Math.random() * 0.5);
-  let blk = Math.round(Math.max(0, blkVal));
-  
-  // ★ 失误 = (HAN+CLU)/2 × 严格递减曲线（越高失误越少）(Experimental: 上调上限)
-  const hanCluAvg = ((attrs.HAN||50) + (attrs.CLU||50)) / 2;
-  // ★ 模块三：失误微调——高球权核心失误来到 3 次上下（接近现实顶级持球手），控球越高失误越少
-  const tovVal = fga * 0.22 * (1.0 - af(hanCluAvg) * 0.36);
-  const tov = Math.round(Math.max(0.5, tovVal));
+// ★★★ 玩家篮板倍率（只影响你自己）★★★
+reb = Math.round(reb * 2.0);   // 篮板×2.0，想调多少改这个数字
+
+// ★ 模块三：助攻 = 传球75% + 手感/关键25%，波动 ±25%，叠巅峰系数
+var astScale = posScale.ast || 0.4;
+// ★ 组织核心：C/PF 且 PAS≥92 → 助攻基准渐进提升（约基奇式；封顶 0.64，避免全99助攻虚高）
+if ((pos === 'C' || pos === 'PF') && (parseInt(attrs.PAS) || 0) >= 92) {
+  astScale = Math.min(0.72, astScale + ((parseInt(attrs.PAS) || 0) - 92) * 0.04);
+}
+const astFactor = af(_posCap('PAS')) * 0.75 + af(((_posCap('HAN') + _posCap('CLU')) / 2)) * 0.25;
+const astVal = astFactor * (totalScore / 200) * astScale * (SIM_CONFIG.PLAYER_STATS.AST_BASE || 12) * statMinsFactor * energyFactor * peakFactor * seasonForm * _gameBoost * (0.75 + Math.random() * 0.5);
+let ast = Math.round(Math.max(0, astVal));
+// ★★★ 玩家助攻倍率（只影响你自己）★★★
+ast = Math.round(ast * 1.6);   // 助攻×1.6，想调多少改这个数字
+
+// ★ 抢断 = PDEF主导 + ATH/HAN辅助（按位置权重）
+const stlF = SIM_CONFIG.PLAYER_STATS.FACTORS[pos].stl;
+const stlSum = stlF.PDEF + (stlF.ATH || 0) + (stlF.HAN || 0);
+const stlAvg = (af(_posCap('PDEF')) * stlF.PDEF + af(_posCap('ATH')) * (stlF.ATH || 0) + af(_posCap('HAN')) * (stlF.HAN || 0)) / stlSum;
+const _stlCoeff = (SIM_CONFIG.PLAYER_STATS.STL_COEFF && SIM_CONFIG.PLAYER_STATS.STL_COEFF[pos]) || 2.9;
+// ★ 抢断/盖帽不随赛季状态（低迷期）缩放：防守数据稳定，保证 DPOY 评选公平
+const stlVal = stlAvg * (totalScore / 200) * _stlCoeff * statMinsFactor * energyFactor * peakFactor * _gameBoost * (0.75 + Math.random() * 0.5);
+let stl = Math.round(Math.max(0, stlVal));
+
+// ★ 盖帽 = BLK主导 + IDEF辅助 + ATH微调（按位置权重）
+const blkF = SIM_CONFIG.PLAYER_STATS.FACTORS[pos].blk;
+const blkSum = blkF.BLK + (blkF.IDEF || 0) + (blkF.ATH || 0);
+const blkAvg = (af(_posCap('BLK')) * blkF.BLK + af(_posCap('IDEF')) * (blkF.IDEF || 0) + af(_posCap('ATH')) * (blkF.ATH || 0)) / blkSum;
+const _blkCoeff = (SIM_CONFIG.PLAYER_STATS.BLK_COEFF && SIM_CONFIG.PLAYER_STATS.BLK_COEFF[pos]) || (pos === 'C' ? 3.0 : pos === 'PF' ? 2.8 : 2.2);
+const blkVal = blkAvg * (totalScore / 200) * _blkCoeff * statMinsFactor * energyFactor * peakFactor * _gameBoost * (0.75 + Math.random() * 0.5);
+let blk = Math.round(Math.max(0, blkVal));
+
+// ★ 失误 = (HAN+CLU)/2 × 严格递减曲线（越高失误越少）(Experimental: 上调上限)
+const hanCluAvg = ((attrs.HAN||50) + (attrs.CLU||50)) / 2;
+// ★ 模块三：失误微调——高球权核心失误来到 3 次上下（接近现实顶级持球手），控球越高失误越少
+const tovVal = fga * 0.22 * (1.0 - af(hanCluAvg) * 0.36);
+const tov = Math.round(Math.max(0.5, tovVal));
   
   // ★ 主项小幅上调（玩家主项数据略高于顶级）
   var _mb = SIM_CONFIG.PLAYER_STATS.MAIN_BOOST && SIM_CONFIG.PLAYER_STATS.MAIN_BOOST[pos];
